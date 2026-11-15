@@ -4,10 +4,20 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.graphics.Typeface
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.method.LinkMovementMethod
+import android.text.style.ForegroundColorSpan
+import android.text.style.URLSpan
+import android.text.style.UnderlineSpan
+import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -15,8 +25,11 @@ import androidx.core.widget.NestedScrollView
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -29,6 +42,8 @@ class MainActivity : AppCompatActivity() {
         const val KEY_GIST_USER = "gist_user"
         const val KEY_GIST_ID = "gist_id"
         const val GIST_RAW_BASE = "https://gist.githubusercontent.com"
+        const val GIST_API_BASE = "https://api.github.com/gists"
+        const val CF_LIST_URL = "https://www.cloudflare.com/ips-v4"
         // 地区分组：代号 to 显示名
         val REGIONS = listOf(
             "hk" to "香港", "sg" to "新加坡", "jp" to "日本",
@@ -72,10 +87,12 @@ class MainActivity : AppCompatActivity() {
     // IP 池数据：代号 -> IP 列表（"all" 为全部）
     private val poolData = mutableMapOf<String, List<String>>()
     private val poolCountViews = mutableMapOf<String, TextView>()
+    private val poolCopyBtns = mutableMapOf<String, Button>()
     private var allIpListView: TextView? = null
     // Cloudflare 随机抽结果：条数 -> IP 列表（只存内存）
     private val cfData = mutableMapOf<Int, List<String>>()
     private val cfCountViews = mutableMapOf<Int, TextView>()
+    private val cfGenTime = mutableMapOf<Int, String>()
 
     private lateinit var btnTabPool: Button
     private lateinit var btnTabCf: Button
@@ -83,10 +100,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var panelCf: NestedScrollView
     private lateinit var inputGistLink: EditText
     private lateinit var gistStatus: TextView
+    private lateinit var subEmpty: TextView
+    private lateinit var subClashRow: LinearLayout
+    private lateinit var subSingboxRow: LinearLayout
     private lateinit var subClashLink: TextView
     private lateinit var subSingboxLink: TextView
+    private lateinit var poolTitleSub: TextView
+    private lateinit var poolCollectInfo: TextView
     private lateinit var poolStatus: TextView
     private lateinit var poolGroups: LinearLayout
+    private lateinit var cfSource: TextView
     private lateinit var cfStatus: TextView
     private lateinit var cfGroups: LinearLayout
 
@@ -169,12 +192,30 @@ class MainActivity : AppCompatActivity() {
         panelCf = findViewById(R.id.panelCf)
         inputGistLink = findViewById(R.id.inputGistLink)
         gistStatus = findViewById(R.id.gistStatus)
+        subEmpty = findViewById(R.id.subEmpty)
+        subClashRow = findViewById(R.id.subClashRow)
+        subSingboxRow = findViewById(R.id.subSingboxRow)
         subClashLink = findViewById(R.id.subClashLink)
         subSingboxLink = findViewById(R.id.subSingboxLink)
+        poolTitleSub = findViewById(R.id.poolTitleSub)
+        poolCollectInfo = findViewById(R.id.poolCollectInfo)
         poolStatus = findViewById(R.id.poolStatus)
         poolGroups = findViewById(R.id.poolGroups)
+        cfSource = findViewById(R.id.cfSource)
         cfStatus = findViewById(R.id.cfStatus)
         cfGroups = findViewById(R.id.cfGroups)
+
+        // 来源行：链接部分蓝色下划线，点开 Cloudflare 官方 IP 列表
+        val sourceText = "来源：Cloudflare 官方 IP 列表（15 个 IPv4 段，共约 1,524,736 个地址）"
+        val linkText = "Cloudflare 官方 IP 列表"
+        val span = SpannableString(sourceText)
+        val linkStart = sourceText.indexOf(linkText)
+        val linkEnd = linkStart + linkText.length
+        span.setSpan(URLSpan(CF_LIST_URL), linkStart, linkEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        span.setSpan(ForegroundColorSpan(0xFF58A6FF.toInt()), linkStart, linkEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        span.setSpan(UnderlineSpan(), linkStart, linkEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        cfSource.text = span
+        cfSource.movementMethod = LinkMovementMethod.getInstance()
 
         // 读回已保存的 Gist 配置
         gistUser = prefs.getString(KEY_GIST_USER, null)
@@ -192,7 +233,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnSaveGist).setOnClickListener { saveGist() }
         findViewById<Button>(R.id.btnRefreshPool).setOnClickListener { refreshPool() }
         findViewById<Button>(R.id.btnCopyClash).setOnClickListener { copySubLink(isClash = true) }
+        findViewById<Button>(R.id.btnOpenClash).setOnClickListener { openSubLink(isClash = true) }
         findViewById<Button>(R.id.btnCopySingbox).setOnClickListener { copySubLink(isClash = false) }
+        findViewById<Button>(R.id.btnOpenSingbox).setOnClickListener { openSubLink(isClash = false) }
 
         // 已配置过 Gist 的话，打开就自动拉一次 IP 池
         if (!gistUser.isNullOrBlank() && !gistId.isNullOrBlank()) refreshPool()
@@ -202,10 +245,10 @@ class MainActivity : AppCompatActivity() {
     private fun showTab(pool: Boolean) {
         panelPool.visibility = if (pool) View.VISIBLE else View.GONE
         panelCf.visibility = if (pool) View.GONE else View.VISIBLE
-        btnTabPool.setBackgroundResource(if (pool) R.drawable.bg_button_primary else R.drawable.bg_card)
-        btnTabPool.setTextColor(if (pool) 0xFFFFFFFF.toInt() else 0xFF8B949E.toInt())
-        btnTabCf.setBackgroundResource(if (pool) R.drawable.bg_card else R.drawable.bg_button_primary)
-        btnTabCf.setTextColor(if (pool) 0xFF8B949E.toInt() else 0xFFFFFFFF.toInt())
+        btnTabPool.setBackgroundResource(if (pool) R.drawable.bg_button_primary else R.drawable.bg_tab_inactive)
+        btnTabPool.setTextColor(if (pool) 0xFFFFFFFF.toInt() else 0xFF58A6FF.toInt())
+        btnTabCf.setBackgroundResource(if (pool) R.drawable.bg_tab_inactive else R.drawable.bg_button_primary)
+        btnTabCf.setTextColor(if (pool) 0xFF58A6FF.toInt() else 0xFFFFFFFF.toInt())
     }
 
     // ---------------- Gist 配置 ----------------
@@ -241,93 +284,138 @@ class MainActivity : AppCompatActivity() {
     private fun updateSubLinks() {
         val user = gistUser
         val id = gistId
-        if (user.isNullOrBlank() || id.isNullOrBlank()) {
-            subClashLink.text = "还没配置 Gist 链接"
-            subSingboxLink.text = "还没配置 Gist 链接"
-            return
-        }
+        val configured = !user.isNullOrBlank() && !id.isNullOrBlank()
+        subEmpty.visibility = if (configured) View.GONE else View.VISIBLE
+        subClashRow.visibility = if (configured) View.VISIBLE else View.GONE
+        subSingboxRow.visibility = if (configured) View.VISIBLE else View.GONE
+        if (!configured) return
         subClashLink.text = "$GIST_RAW_BASE/$user/$id/raw/clash.yaml"
         subSingboxLink.text = "$GIST_RAW_BASE/$user/$id/raw/singbox.json"
     }
 
-    private fun copySubLink(isClash: Boolean) {
+    private fun subUrl(isClash: Boolean): String? {
         val user = gistUser
         val id = gistId
-        if (user.isNullOrBlank() || id.isNullOrBlank()) {
+        if (user.isNullOrBlank() || id.isNullOrBlank()) return null
+        return if (isClash) "$GIST_RAW_BASE/$user/$id/raw/clash.yaml"
+        else "$GIST_RAW_BASE/$user/$id/raw/singbox.json"
+    }
+
+    private fun copySubLink(isClash: Boolean) {
+        val url = subUrl(isClash)
+        if (url == null) {
             Toast.makeText(this, "还没配置 Gist 链接", Toast.LENGTH_SHORT).show()
             return
         }
-        val url = if (isClash) "$GIST_RAW_BASE/$user/$id/raw/clash.yaml"
-        else "$GIST_RAW_BASE/$user/$id/raw/singbox.json"
         copyText(if (isClash) "Clash 订阅链接" else "sing-box 订阅链接", url)
+    }
+
+    private fun openSubLink(isClash: Boolean) {
+        val url = subUrl(isClash)
+        if (url == null) {
+            Toast.makeText(this, "还没配置 Gist 链接", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: Exception) {
+            Toast.makeText(this, "打不开链接", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ---------------- 优选 IP 池 ----------------
     private fun buildPoolGroups() {
         poolGroups.removeAllViews()
         poolCountViews.clear()
+        poolCopyBtns.clear()
         for ((region, label) in REGIONS) {
-            poolGroups.addView(buildPoolRow(region, label))
+            poolGroups.addView(buildPoolCard(region, label, withListBox = false))
         }
-        poolGroups.addView(buildPoolRow("all", "全部"))
-        // 全部组的可滚动 IP 显示框：固定 400dp 高，一行一个 IP
-        val scroll = NestedScrollView(this)
-        val lp = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(400)
-        ).apply { topMargin = dp(6) }
-        scroll.layoutParams = lp
-        val listTv = TextView(this)
-        listTv.text = ""
-        listTv.textSize = 14f
-        listTv.setTextColor(0xFFE6EDF3.toInt())
-        listTv.setPadding(dp(4), dp(4), dp(4), dp(4))
-        listTv.setTextIsSelectable(true)
-        listTv.setLineSpacing(dp(4).toFloat(), 1f)
-        scroll.addView(listTv)
-        allIpListView = listTv
-        poolGroups.addView(scroll)
+        poolGroups.addView(buildPoolCard("all", "全部", withListBox = true))
     }
 
-    // 一组一行：地区名 + 条数、复制、下载
-    private fun buildPoolRow(region: String, label: String): LinearLayout {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.layoutParams = LinearLayout.LayoutParams(
+    // 一个地区一张卡片：第一行地区名 + 条数，第二行一键复制全部 N 条 + 下载 .txt；
+    // 全部组再加一个 400dp 高的可滚动 IP 显示框
+    private fun buildPoolCard(region: String, label: String, withListBox: Boolean): LinearLayout {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setBackgroundResource(R.drawable.bg_card)
+        card.setPadding(dp(16), dp(16), dp(16), dp(16))
+        card.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(10) }
+        ).apply { topMargin = dp(12) }
+
+        val row1 = LinearLayout(this)
+        row1.orientation = LinearLayout.HORIZONTAL
+        row1.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
         val nameTv = TextView(this)
-        nameTv.text = "$label · 0 条"
-        nameTv.textSize = 14f
+        nameTv.text = label
+        nameTv.textSize = 18f
+        nameTv.setTypeface(null, Typeface.BOLD)
         nameTv.setTextColor(0xFFE6EDF3.toInt())
         nameTv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        row.addView(nameTv)
-        poolCountViews[region] = nameTv
+        row1.addView(nameTv)
+        val countTv = TextView(this)
+        countTv.text = "0 条"
+        countTv.textSize = 16f
+        countTv.setTextColor(0xFF8B949E.toInt())
+        row1.addView(countTv)
+        card.addView(row1)
+        poolCountViews[region] = countTv
 
+        val row2 = LinearLayout(this)
+        row2.orientation = LinearLayout.HORIZONTAL
+        row2.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(12) }
         val copyBtn = Button(this)
-        copyBtn.text = "复制"
-        copyBtn.textSize = 12f
-        copyBtn.setTextColor(0xFF58A6FF.toInt())
-        copyBtn.setBackgroundResource(R.drawable.bg_button_outline)
+        copyBtn.text = "一键复制全部"
+        copyBtn.textSize = 15f
+        copyBtn.setTextColor(0xFFFFFFFF.toInt())
+        copyBtn.setBackgroundResource(R.drawable.bg_button_primary)
+        copyBtn.setAllCaps(false)
         copyBtn.minimumHeight = 0
-        copyBtn.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
-        ).apply { marginEnd = dp(4) }
+        copyBtn.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
         copyBtn.setOnClickListener { copyPoolGroup(region, label) }
-        row.addView(copyBtn)
-
+        row2.addView(copyBtn)
         val dlBtn = Button(this)
-        dlBtn.text = "下载"
-        dlBtn.textSize = 12f
+        dlBtn.text = "下载 .txt"
+        dlBtn.textSize = 15f
         dlBtn.setTextColor(0xFF58A6FF.toInt())
         dlBtn.setBackgroundResource(R.drawable.bg_button_outline)
+        dlBtn.setAllCaps(false)
         dlBtn.minimumHeight = 0
         dlBtn.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
-        )
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)
+        ).apply { marginStart = dp(8) }
         dlBtn.setOnClickListener { downloadPoolGroup(region, label) }
-        row.addView(dlBtn)
-        return row
+        row2.addView(dlBtn)
+        card.addView(row2)
+        poolCopyBtns[region] = copyBtn
+
+        if (withListBox) {
+            val scroll = NestedScrollView(this)
+            scroll.setBackgroundResource(R.drawable.bg_input)
+            scroll.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(400)
+            ).apply { topMargin = dp(12) }
+            val listTv = TextView(this)
+            listTv.text = ""
+            listTv.textSize = 14f
+            listTv.setTextColor(0xFFE6EDF3.toInt())
+            listTv.setPadding(dp(8), dp(8), dp(8), dp(8))
+            listTv.setTextIsSelectable(true)
+            listTv.setLineSpacing(dp(4).toFloat(), 1f)
+            scroll.addView(listTv)
+            allIpListView = listTv
+            card.addView(scroll)
+        }
+        return card
     }
 
     private fun refreshPool() {
@@ -356,13 +444,29 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+            // 上次收集时间：调 Gist 接口读 updated_at，取 UTC 原值 MM/DD HH:MM（和空间显示一致）；拿不到就只显示频率
+            val lastCollected = async(Dispatchers.IO) {
+                try {
+                    val body = httpGet("$GIST_API_BASE/$id") ?: return@async null
+                    val raw = JSONObject(body).optString("updated_at", "")
+                    parseGistTime(raw)
+                } catch (e: Exception) {
+                    null
+                }
+            }
             for (d in jobs) {
                 val r = d.await()
                 if (r != null) fetched[r.first] = r.second
             }
+            val collectedAt = lastCollected.await()
             // 只更新拉取成功的组，失败的组保留旧数据
             for ((region, ips) in fetched) poolData[region] = ips
             updatePoolCounts()
+            poolCollectInfo.text = if (collectedAt != null) {
+                "每 4 小时自动收集一次 · 上次收集 $collectedAt"
+            } else {
+                "每 4 小时自动收集一次"
+            }
             val total = poolData["all"]?.size ?: 0
             poolStatus.text = if (failed.isEmpty()) {
                 "已更新：${fetched.size} 组，全部共 $total 条"
@@ -378,10 +482,13 @@ class MainActivity : AppCompatActivity() {
     private fun updatePoolCounts() {
         for ((region, label) in REGIONS) {
             val n = poolData[region]?.size ?: 0
-            poolCountViews[region]?.text = "$label · $n 条"
+            poolCountViews[region]?.text = "$n 条"
+            poolCopyBtns[region]?.text = if (n > 0) "一键复制全部 $n 条" else "一键复制全部"
         }
         val allN = poolData["all"]?.size ?: 0
-        poolCountViews["all"]?.text = "全部 · $allN 条"
+        poolCountViews["all"]?.text = "$allN 条"
+        poolCopyBtns["all"]?.text = if (allN > 0) "一键复制全部 $allN 条" else "一键复制全部"
+        poolTitleSub.text = "聚合器收集 · 按地区分开 · 共 $allN 条"
         allIpListView?.text = poolData["all"]?.joinToString("\n") ?: ""
     }
 
@@ -410,76 +517,102 @@ class MainActivity : AppCompatActivity() {
         cfGroups.removeAllViews()
         cfCountViews.clear()
         for (count in CF_COUNTS) {
-            cfGroups.addView(buildCfRow(count))
+            cfGroups.addView(buildCfCard(count))
         }
     }
 
-    // 一组一行：生成按钮、条数、复制、下载（IP 不在页面上显示）
-    private fun buildCfRow(count: Int): LinearLayout {
-        val row = LinearLayout(this)
-        row.orientation = LinearLayout.HORIZONTAL
-        row.layoutParams = LinearLayout.LayoutParams(
+    // 一组一张卡片：第一行 N 个 + 当前 N 个 · 生成于时间，第二行抓取 N 个，第三行一键复制全部 N 个 IP + 下载 .txt（IP 不在页面上显示）
+    private fun buildCfCard(count: Int): LinearLayout {
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.setBackgroundResource(R.drawable.bg_card)
+        card.setPadding(dp(16), dp(16), dp(16), dp(16))
+        card.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(12) }
+
+        val row1 = LinearLayout(this)
+        row1.orientation = LinearLayout.HORIZONTAL
+        row1.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        val nameTv = TextView(this)
+        nameTv.text = "$count 个"
+        nameTv.textSize = 18f
+        nameTv.setTypeface(null, Typeface.BOLD)
+        nameTv.setTextColor(0xFFE6EDF3.toInt())
+        row1.addView(nameTv)
+        val statusTv = TextView(this)
+        statusTv.text = "尚未生成"
+        statusTv.textSize = 14f
+        statusTv.setTextColor(0xFF8B949E.toInt())
+        statusTv.gravity = Gravity.END
+        statusTv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            .apply { marginStart = dp(8) }
+        row1.addView(statusTv)
+        card.addView(row1)
+        cfCountViews[count] = statusTv
+
+        val genBtn = Button(this)
+        genBtn.text = "抓取 $count 个"
+        genBtn.textSize = 15f
+        genBtn.setTextColor(0xFFFFFFFF.toInt())
+        genBtn.setBackgroundResource(R.drawable.bg_button_primary)
+        genBtn.setAllCaps(false)
+        genBtn.minimumHeight = 0
+        genBtn.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)
+        ).apply { topMargin = dp(12) }
+        genBtn.setOnClickListener { generateCfGroup(count) }
+        card.addView(genBtn)
+
+        val row2 = LinearLayout(this)
+        row2.orientation = LinearLayout.HORIZONTAL
+        row2.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(10) }
-        val genBtn = Button(this)
-        genBtn.text = "生成 $count 条"
-        genBtn.textSize = 12f
-        genBtn.setTextColor(0xFFFFFFFF.toInt())
-        genBtn.setBackgroundResource(R.drawable.bg_button_primary)
-        genBtn.minimumHeight = 0
-        genBtn.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
-        ).apply { marginEnd = dp(8) }
-        genBtn.setOnClickListener { generateCfGroup(count) }
-        row.addView(genBtn)
-
-        val countTv = TextView(this)
-        countTv.text = "未生成"
-        countTv.textSize = 14f
-        countTv.setTextColor(0xFF8B949E.toInt())
-        countTv.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        row.addView(countTv)
-        cfCountViews[count] = countTv
-
         val copyBtn = Button(this)
-        copyBtn.text = "复制"
-        copyBtn.textSize = 12f
-        copyBtn.setTextColor(0xFF58A6FF.toInt())
-        copyBtn.setBackgroundResource(R.drawable.bg_button_outline)
+        copyBtn.text = "一键复制全部 $count 个 IP"
+        copyBtn.textSize = 15f
+        copyBtn.setTextColor(0xFFFFFFFF.toInt())
+        copyBtn.setBackgroundResource(R.drawable.bg_button_primary)
+        copyBtn.setAllCaps(false)
         copyBtn.minimumHeight = 0
-        copyBtn.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
-        ).apply { marginEnd = dp(4) }
+        copyBtn.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
         copyBtn.setOnClickListener { copyCfGroup(count) }
-        row.addView(copyBtn)
-
+        row2.addView(copyBtn)
         val dlBtn = Button(this)
-        dlBtn.text = "下载"
-        dlBtn.textSize = 12f
+        dlBtn.text = "下载 .txt"
+        dlBtn.textSize = 15f
         dlBtn.setTextColor(0xFF58A6FF.toInt())
         dlBtn.setBackgroundResource(R.drawable.bg_button_outline)
+        dlBtn.setAllCaps(false)
         dlBtn.minimumHeight = 0
         dlBtn.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
-        )
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)
+        ).apply { marginStart = dp(8) }
         dlBtn.setOnClickListener { downloadCfGroup(count) }
-        row.addView(dlBtn)
-        return row
+        row2.addView(dlBtn)
+        card.addView(row2)
+        return card
     }
 
     private fun generateCfGroup(count: Int) {
         val ips = generateCf(count)
         cfData[count] = ips
-        cfCountViews[count]?.text = "${ips.size} 条"
-        cfCountViews[count]?.setTextColor(0xFFE6EDF3.toInt())
+        val now = nowStr()
+        cfGenTime[count] = now
+        cfCountViews[count]?.text = "当前 ${ips.size} 个 · 生成于 $now"
         cfStatus.text = "已生成 $count 条（去重后 ${ips.size} 条）"
     }
 
     private fun copyCfGroup(count: Int) {
         val ips = cfData[count]
         if (ips.isNullOrEmpty()) {
-            Toast.makeText(this, "还没生成，先点生成 $count 条", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "还没生成，先点抓取 $count 个", Toast.LENGTH_SHORT).show()
             return
         }
         copyText("Cloudflare ${ips.size} 条", ips.joinToString("\n"))
@@ -488,7 +621,7 @@ class MainActivity : AppCompatActivity() {
     private fun downloadCfGroup(count: Int) {
         val ips = cfData[count]
         if (ips.isNullOrEmpty()) {
-            Toast.makeText(this, "还没生成，先点生成 $count 条", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "还没生成，先点抓取 $count 个", Toast.LENGTH_SHORT).show()
             return
         }
         val msg = saveToDownloads("cloudflare_$count.txt", ips.joinToString("\n") + "\n")
@@ -531,7 +664,7 @@ class MainActivity : AppCompatActivity() {
     // ---------------- 网络 ----------------
     private fun httpGet(url: String): String? {
         return try {
-            val req = Request.Builder().url(url).header("User-Agent", "IPPool/1.0").build()
+            val req = Request.Builder().url(url).header("User-Agent", "IPPool/1.1").build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 resp.body?.string()
@@ -543,6 +676,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun parseIpLines(body: String): List<String> {
         return body.lines().map { it.trim() }.filter { it.isNotEmpty() && ipv4ToInt(it) != null }
+    }
+
+    // Gist updated_at 是 UTC 时间 "2026-11-15T13:41:22Z"，取原值转成 MM/DD HH:MM（和空间显示一致）
+    private fun parseGistTime(raw: String): String? {
+        val m = Regex("^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})").find(raw.trim()) ?: return null
+        return "${m.groupValues[2]}/${m.groupValues[3]} ${m.groupValues[4]}:${m.groupValues[5]}"
+    }
+
+    // 当前本地时间 MM/DD HH:mm（用于 Cloudflare 各组“生成于”）
+    private fun nowStr(): String {
+        return SimpleDateFormat("MM/dd HH:mm", Locale.US).format(Date())
     }
 
     // ---------------- 工具 ----------------
