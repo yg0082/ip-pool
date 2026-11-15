@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 优选IP集合 v1.0：顶部两个标签（聚合优选IP / Cloudflare 优选 IP），一次只显示一个板块、全屏宽度，另一个完全隐藏。深色面板（GitHub Dark 风格）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#0D1117" android:orientation="vertical">
+
+    <!-- 顶部标签栏：两个标签尺寸、字号完全一致 -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="#161B22" android:orientation="horizontal" android:padding="8dp">
+        <Button android:id="@+id/btnTabPool" android:layout_width="0dp" android:layout_height="48dp"
+            android:layout_weight="1" android:layout_marginEnd="4dp"
+            android:background="@drawable/bg_button_primary" android:text="聚合优选IP" android:textColor="#FFFFFF"
+            android:textSize="16sp" android:textStyle="bold" />
+        <Button android:id="@+id/btnTabCf" android:layout_width="0dp" android:layout_height="48dp"
+            android:layout_weight="1" android:layout_marginStart="4dp"
+            android:background="@drawable/bg_card" android:text="Cloudflare 优选 IP" android:textColor="#8B949E"
+            android:textSize="16sp" android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- ============ 面板一：聚合优选IP（默认显示） ============ -->
+    <androidx.core.widget.NestedScrollView android:id="@+id/panelPool" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp">
+
+            <!-- Gist 配置卡片 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@drawable/bg_card" android:orientation="vertical" android:padding="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Gist 配置" android:textSize="16sp" android:textStyle="bold" android:textColor="#E6EDF3" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="把聚合器 Gist 链接粘贴一次存在本机，只用来拉 IP 池和订阅，不会上传，也不会写进 App 里。"
+                    android:textColor="#8B949E" android:textSize="13sp" android:layout_marginTop="6dp" />
+                <EditText android:id="@+id/inputGistLink" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:background="@drawable/bg_input" android:padding="12dp"
+                    android:hint="粘贴聚合器 Gist 链接"
+                    android:textColor="#E6EDF3" android:textColorHint="#8B949E"
+                    android:inputType="text" android:singleLine="true" android:maxLines="1" android:ellipsize="end"
+                    android:textSize="13sp" android:layout_marginTop="10dp" />
+                <Button android:id="@+id/btnSaveGist" android:layout_width="match_parent" android:layout_height="48dp"
+                    android:background="@drawable/bg_button_outline" android:text="保存" android:textColor="#58A6FF"
+                    android:textSize="14sp" android:layout_marginTop="8dp" />
+                <TextView android:id="@+id/gistStatus" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="还没配置 Gist 链接" android:textColor="#8B949E" android:textSize="13sp" android:layout_marginTop="6dp" />
+            </LinearLayout>
+
+            <!-- 订阅地址卡片 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@drawable/bg_card" android:orientation="vertical"
+                android:padding="12dp" android:layout_marginTop="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="📡 聚合订阅" android:textSize="15sp" android:textStyle="bold" android:textColor="#E6EDF3" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="聚合器直接生成的节点，没在手机上测过"
+                    android:textColor="#8B949E" android:textSize="13sp" android:layout_marginTop="6dp" />
+
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Clash" android:textSize="14sp" android:textStyle="bold" android:textColor="#E6EDF3" android:layout_marginTop="12dp" />
+                <TextView android:id="@+id/subClashLink" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="还没配置 Gist 链接"
+                    android:textColor="#58A6FF" android:textSize="13sp" android:textIsSelectable="true" android:layout_marginTop="6dp" />
+                <Button android:id="@+id/btnCopyClash" android:layout_width="match_parent" android:layout_height="48dp"
+                    android:background="@drawable/bg_button_outline" android:text="复制 Clash 订阅链接" android:textColor="#58A6FF"
+                    android:textSize="13sp" android:layout_marginTop="8dp" />
+
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="sing-box" android:textSize="14sp" android:textStyle="bold" android:textColor="#E6EDF3" android:layout_marginTop="12dp" />
+                <TextView android:id="@+id/subSingboxLink" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="还没配置 Gist 链接"
+                    android:textColor="#58A6FF" android:textSize="13sp" android:textIsSelectable="true" android:layout_marginTop="6dp" />
+                <Button android:id="@+id/btnCopySingbox" android:layout_width="match_parent" android:layout_height="48dp"
+                    android:background="@drawable/bg_button_outline" android:text="复制 sing-box 订阅链接" android:textColor="#58A6FF"
+                    android:textSize="13sp" android:layout_marginTop="8dp" />
+            </LinearLayout>
+
+            <!-- 优选 IP 池卡片 -->
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@drawable/bg_card" android:orientation="vertical"
+                android:padding="12dp" android:layout_marginTop="12dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:text="优选 IP 池" android:textSize="15sp" android:textStyle="bold" android:textColor="#E6EDF3" />
+                    <Button android:id="@+id/btnRefreshPool" android:layout_width="wrap_content" android:layout_height="40dp"
+                        android:background="@drawable/bg_button_outline" android:text="🔄 刷新" android:textColor="#58A6FF"
+                        android:textSize="13sp" android:paddingStart="16dp" android:paddingEnd="16dp" />
+                </LinearLayout>
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="每 4 小时自动收集一次" android:textColor="#8B949E" android:textSize="13sp" android:layout_marginTop="6dp" />
+                <TextView android:id="@+id/poolStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:background="@drawable/bg_status" android:padding="12dp" android:text="还没拉取过 IP 池"
+                    android:textColor="#58A6FF" android:textSize="14sp" android:layout_marginTop="10dp" />
+                <!-- 地区分组由代码动态生成：每组一行（地区名 + 条数、复制、下载），全部组另带 400dp 高的可滚动 IP 显示框 -->
+                <LinearLayout android:id="@+id/poolGroups" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:layout_marginTop="6dp" />
+            </LinearLayout>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="提示：IP 池每 4 小时由聚合器自动收集更新，点刷新重新拉取；复制或下载后可以拿到批量测IP 里测。订阅里的节点没在手机上测过，先测再用。"
+                android:textColor="#8B949E" android:textSize="12sp" android:layout_marginTop="12dp" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- ============ 面板二：Cloudflare 优选 IP（默认隐藏） ============ -->
+    <androidx.core.widget.NestedScrollView android:id="@+id/panelCf" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:fillViewport="true" android:visibility="gone">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="12dp">
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@drawable/bg_card" android:orientation="vertical" android:padding="12dp">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Cloudflare 优选 IP" android:textSize="15sp" android:textStyle="bold" android:textColor="#E6EDF3" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="从 Cloudflare 官方 15 个 IPv4 段里随机抽，每按一次重新抽一组新的。IP 不在页面上显示，复制或下载后拿去测。"
+                    android:textColor="#8B949E" android:textSize="13sp" android:layout_marginTop="6dp" />
+                <TextView android:id="@+id/cfStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:background="@drawable/bg_status" android:padding="12dp" android:text="还没生成过"
+                    android:textColor="#58A6FF" android:textSize="14sp" android:layout_marginTop="10dp" />
+                <!-- 四组（200 / 500 / 1000 / 1500）由代码动态生成：每组一行（生成按钮、条数、复制、下载） -->
+                <LinearLayout android:id="@+id/cfGroups" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:layout_marginTop="6dp" />
+            </LinearLayout>
+
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="提示：这些地址是 Cloudflare 的 CDN 入口，不是节点本身；测的时候用域名握手，裸 IP 直连会被拒。"
+                android:textColor="#8B949E" android:textSize="12sp" android:layout_marginTop="12dp" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>
