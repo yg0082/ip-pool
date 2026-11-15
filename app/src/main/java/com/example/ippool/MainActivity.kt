@@ -664,7 +664,7 @@ class MainActivity : AppCompatActivity() {
     // ---------------- 网络 ----------------
     private fun httpGet(url: String): String? {
         return try {
-            val req = Request.Builder().url(url).header("User-Agent", "IPPool/1.1").build()
+            val req = Request.Builder().url(url).header("User-Agent", "IPPool/1.0").build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 resp.body?.string()
